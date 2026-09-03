@@ -228,6 +228,7 @@
 (function () {
 "use strict";
 var ADMIN_PASS_ENC = "MDEyMjAwMg==";
+var BUILD = "2026-09-03 14:06";
 var GH = { owner: "sadradeg", repo: "sadradeg.github.io", branch: "main", path: "config.json" };
 var CFG_URLS = [
 "config.json",
@@ -918,19 +919,40 @@ $("admCatName").value = ""; $("admCatAny").checked = false;
 } else if (add === "diag") {
 var out = $("admDiag");
 out.textContent = "بيفحص…";
-var tests = [
-["الموقع نفسه", "config.json?t=" + Date.now()],
-["GitHub API", "https://api.github.com/repos/" + GH.owner + "/" + GH.repo],
-["ملف الإعدادات", "https://raw.githubusercontent.com/" + GH.owner + "/" + GH.repo + "/" + GH.branch + "/" + GH.path + "?t=" + Date.now()],
-["عدّاد الزيارات", "https://abacus.jasoncameron.dev/get/sadradeg/visits"]
-];
-Promise.all(tests.map(function (t) { return probe(t[1], 9000); })).then(function (codes) {
-var lines = tests.map(function (t, i) {
-var c = codes[i];
-return (c >= 200 && c < 400 ? "✓ " : "✗ ") + t[0] + " — " + (c ? c : "مفيش رد");
+var tok = ghToken();
+var lines = [];
+lines.push("الصفحة: " + location.hostname);
+lines.push("النسخة: " + BUILD);
+lines.push("توكن محفوظ: " + (tok ? ("نعم (" + tok.length + " حرف)") : "لأ ✗"));
+var jobs = [];
+jobs.push(probe("config.json?t=" + Date.now(), 9000).then(function (c) {
+lines.push((c === 200 ? "✓" : "✗") + " ملف الإعدادات — " + (c || "مفيش رد"));
+}));
+jobs.push(
+timed(fetch("https://abacus.jasoncameron.dev/hit/sadradeg/visits", { cache: "no-store" })
+.then(function (r) { return r.json(); }), 9000, "t")
+.then(function (j) { lines.push("✓ عدّاد الزيارات — العدد دلوقتي " + j.value); },
+function () { lines.push("✗ عدّاد الزيارات — مفيش رد"); })
+);
+if (tok) {
+jobs.push(
+timed(fetch("https://api.github.com/repos/" + GH.owner + "/" + GH.repo, {
+headers: { "Authorization": "Bearer " + tok, "Accept": "application/vnd.github+json" },
+cache: "no-store"
+}), 12000, "t").then(function (r) {
+if (!r.ok) { lines.push("✗ GitHub بالتوكن — " + r.status); return null; }
+return r.json().then(function (d) {
+lines.push("✓ GitHub بالتوكن — 200");
+lines.push((d.permissions && d.permissions.push ? "✓" : "✗") + " صلاحية الكتابة");
 });
-out.textContent = lines.join("\n");
-});
+}, function () { lines.push("✗ GitHub بالتوكن — مفيش رد"); })
+);
+} else {
+jobs.push(probe("https://api.github.com/repos/" + GH.owner + "/" + GH.repo, 9000).then(function (c) {
+lines.push((c === 200 ? "✓" : "✗") + " GitHub من غير توكن — " + (c || "مفيش رد"));
+}));
+}
+Promise.all(jobs).then(function () { out.textContent = lines.join("\n"); });
 return;
 } else if (add === "shop") {
 var sn = $("admShopName").value.trim();
@@ -1072,7 +1094,7 @@ return new Promise(function (resolve, reject) {
 if (!(window.claude && window.claude.use)) { ghPublish(cfg).then(resolve, reject); return; }
 window.claude.use("artifact").then(function (art) {
 if (!art) { ghPublish(cfg).then(resolve, reject); return; }
-art.publish(buildDoc(cfg)).then(function () {
+timed(art.publish(buildDoc(cfg)), 30000, "النشر أخد أكتر من ٣٠ ثانية من غير رد.").then(function () {
 resolve("اتنشر ✓ أي حد يفتح الموقع من جديد هيشوف التعديل.");
 }, function (e) {
 var code = e && e.code;
