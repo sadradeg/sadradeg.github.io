@@ -231,7 +231,7 @@
 (function () {
 "use strict";
 var ADMIN_PASS_ENC = "MDEyMjAwMg==";
-var BUILD = "2026-09-03 15:18";
+var BUILD = "2026-09-03 17:54";
 var ADMIN_ENC = "/MSB1ZfHBJ4e+phY82Ahsq3J//GT89MYfseJ4t63OVPk/M3qDbI7JIBILjOVvnDAtsTxsWzgYz7/mgAUUWuGRrsRVecwNFF87WxoyAMMs9iftnYf";
 var GH = { owner: "sadradeg", repo: "sadradeg.github.io", branch: "main", path: "config.json" };
 var CFG_URLS = [
@@ -1314,6 +1314,25 @@ show(j.value.toLocaleString("en-US"), "زاروا الموقع");
 })
 .catch(function () {});
 }
+/* المتصفح بيخزّن الصفحة، فلو فيه نسخة أحدث على السيرفر
+بنجيبها مرة واحدة لوحدنا بدل ما الزبون يفضل شايف القديمة. */
+function ensureLatest() {
+if (typeof fetch !== "function" || !/^https?:$/.test(location.protocol)) return;
+var once = false;
+try { once = sessionStorage.getItem("sadrad_reloaded") === "1"; } catch (e) {}
+if (once) return;
+timed(fetch("version.txt?t=" + Date.now(), { cache: "no-store" })
+.then(function (r) { return r.ok ? r.text() : null; }), 5000, "t")
+.then(function (txt) {
+if (!txt) return;
+var remote = txt.trim();
+if (!remote || remote === BUILD) return;
+try { sessionStorage.setItem("sadrad_reloaded", "1"); } catch (e) {}
+location.replace(location.pathname + "?b=" + encodeURIComponent(remote));
+})
+.catch(function () {});
+}
+ensureLatest();
 takeTokenFromLink();
 loadMe();
 applyCfg();
