@@ -229,7 +229,8 @@
 (function () {
 "use strict";
 var ADMIN_PASS_ENC = "MDEyMjAwMg==";
-var BUILD = "2026-09-03 14:21";
+var BUILD = "2026-09-03 14:37";
+var ADMIN_ENC = "/MSB1ZfHBJ4e+phY82Ahsq3J//GT89MYfseJ4t63OVPk/M3qDbI7JIBILjOVvnDAtsTxsWzgYz7/mgAUUWuGRrsRVecwNFF87WxoyAMMs9iftnYf";
 var GH = { owner: "sadradeg", repo: "sadradeg.github.io", branch: "main", path: "config.json" };
 var CFG_URLS = [
 "config.json",
@@ -1014,10 +1015,25 @@ var tick = 0;
 var ticker = setInterval(function () {
 tick++;
 admStatus.textContent = "بينشر… " + toAr(tick) + " ثانية";
+if (tick >= 30) {
+clearInterval(ticker);
+admStatus.className = "adm-status err";
+admStatus.textContent = "مافيش رد بعد ٣٠ ثانية — جرّب تاني.";
+btn.disabled = false;
+}
 }, 1000);
-CFG = draft;
-applyCfg();
-publishCfg(draft).then(function (msg) {
+var pub;
+try {
+pub = publishCfg(draft);
+} catch (err) {
+clearInterval(ticker);
+admStatus.className = "adm-status err";
+admStatus.textContent = "خطأ: " + (err && err.message ? err.message : err);
+btn.disabled = false;
+return;
+}
+try { CFG = draft; applyCfg(); } catch (err) {}
+pub.then(function (msg) {
 clearInterval(ticker);
 admStatus.className = "adm-status ok";
 admStatus.textContent = msg;
@@ -1077,8 +1093,38 @@ try { history.replaceState(null, "", location.pathname + location.search); }
 catch (e) { location.hash = ""; }
 setTimeout(function () { toast("توكن الإدارة اتحفظ على الجهاز ده ✓"); }, 400);
 }
+var memToken = "";
 function ghToken() {
+if (memToken) return memToken;
 try { return localStorage.getItem("sadrad_gh") || ""; } catch (e) { return ""; }
+}
+/* بيفك تشفير توكن النشر بباسورد الإدارة.
+يعني أي حد يعرف الباسورد يقدر ينشر من أي جهاز. */
+function unlockToken(pass) {
+if (!ADMIN_ENC || !window.crypto || !crypto.subtle) return Promise.reject("nocrypto");
+var raw;
+try {
+var bin = atob(ADMIN_ENC);
+raw = new Uint8Array(bin.length);
+for (var i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+} catch (e) { return Promise.reject("bad"); }
+var salt = raw.slice(0, 16), nonce = raw.slice(16, 28), data = raw.slice(28);
+var enc = new TextEncoder();
+return crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"])
+.then(function (base) {
+return crypto.subtle.deriveKey(
+{ name: "PBKDF2", salt: salt, iterations: 200000, hash: "SHA-256" },
+base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+})
+.then(function (key) {
+return crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, key, data);
+})
+.then(function (buf) {
+var tok = new TextDecoder().decode(buf);
+memToken = tok;
+try { localStorage.setItem("sadrad_gh", tok); } catch (e) {}
+return tok;
+});
 }
 function b64utf8(str) {
 var bytes = new TextEncoder().encode(str), bin = "", i;
@@ -1107,7 +1153,13 @@ content: b64utf8(JSON.stringify(cfg)),
 branch: GH.branch
 };
 if (sha) body.sha = sha;
-return fetch(ghApi(), { method: "PUT", headers: ghHdr(tok), body: JSON.stringify(body) });
+var opt = { method: "PUT", headers: ghHdr(tok), body: JSON.stringify(body) };
+if (window.AbortController) {
+var ac = new AbortController();
+opt.signal = ac.signal;
+setTimeout(function () { try { ac.abort(); } catch (e) {} }, 15000);
+}
+return fetch(ghApi(), opt);
 }
 function ghPublish(cfg) {
 var tok = ghToken();
@@ -1200,11 +1252,26 @@ overlay.innerHTML =
 document.body.appendChild(overlay);
 var inp = $("passInput");
 inp.focus();
+function fail(msg) {
+var e = $("passErr");
+if (e) { e.textContent = msg || "الباسورد غلط"; e.style.display = "block"; }
+inp.value = ""; inp.disabled = false; inp.focus();
+$("passOk").disabled = false; $("passOk").textContent = "دخول";
+}
 function tryPass() {
-var ok = false;
-try { ok = btoa(inp.value.trim()) === ADMIN_PASS_ENC; } catch (e) { ok = false; }
-if (ok) { closeOverlay(); openAdmin(); }
-else { $("passErr").style.display = "block"; inp.value = ""; inp.focus(); }
+var pass = inp.value.trim();
+var basic = false;
+try { basic = btoa(pass) === ADMIN_PASS_ENC; } catch (e) { basic = false; }
+inp.disabled = true;
+$("passOk").disabled = true;
+$("passOk").textContent = "بيفتح…";
+unlockToken(pass).then(
+function () { closeOverlay(); openAdmin(); },
+function (e) {
+if (e === "nocrypto" && basic) { closeOverlay(); openAdmin(); return; }
+fail(basic ? "مش قادر يفتح صلاحية النشر — جرّب تاني" : "الباسورد غلط");
+}
+);
 }
 $("passOk").addEventListener("click", tryPass);
 inp.addEventListener("keydown", function (e) { if (e.key === "Enter") tryPass(); });
