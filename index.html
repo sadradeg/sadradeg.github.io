@@ -239,8 +239,18 @@
 <script id="appJs">
 (function () {
 "use strict";
+window.addEventListener("error", function (e) {
+try {
+var box = document.createElement("div");
+box.className = "toast";
+box.style.background = "#B4442C";
+box.textContent = "خطأ في الصفحة: " + (e.message || "غير معروف");
+document.body.appendChild(box);
+setTimeout(function () { box.remove(); }, 6000);
+} catch (x) {}
+});
 var ADMIN_PASS_ENC = "MDEyMjAwMg==";
-var BUILD = "2026-09-03 18:14";
+var BUILD = "2026-09-03 18:26";
 var ADMIN_ENC = "/MSB1ZfHBJ4e+phY82Ahsq3J//GT89MYfseJ4t63OVPk/M3qDbI7JIBILjOVvnDAtsTxsWzgYz7/mgAUUWuGRrsRVecwNFF87WxoyAMMs9iftnYf";
 var GH = { owner: "sadradeg", repo: "sadradeg.github.io", branch: "main", path: "config.json" };
 var CFG_URLS = [
@@ -382,6 +392,14 @@ buildShops();
 sync(); advance();
 }, true));
 });
+}
+function catByName(n) {
+for (var i = 0; i < CFG.cats.length; i++) { if (CFG.cats[i].name === n) return CFG.cats[i]; }
+return null;
+}
+function isOpenCat(n) { var c = catByName(n); return !!(c && c.any); }
+function shopsFor(cat) {
+return (CFG.shops || []).filter(function (x) { return !x.cat || x.cat === cat; });
 }
 function buildShops() {
 var mine = shopsFor(state.cat);
